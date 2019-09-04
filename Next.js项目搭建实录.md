@@ -123,3 +123,103 @@ Next.js的路由系统基于`/pages`目录下的文件组织，和请求进行�
 > 测试发现：在/pages目录下所有的子目录及组件文件，都会被映射成路由。比如/pages/post/components/Button.js会响应/post/components/Button请求。
 
 `/pages`目录下所有的非“_”开头的文件，都将按其相对路径被映射成路由，所以页面中包含的组件，需要单独出去进行维护。
+
+### 使用react-intl国际化
+
+[官方范例](https://github.com/zeit/next.js/tree/canary/examples/with-react-intl)
+
+#### 基本用法
+
+按照react-intl的要求准备语言文件，要注意的是react-intl使用的messages是一个普通的平铺的对象，但是键可以使用路径形式，即‘common.confirm.ok’。
+
+```js
+module.exports = {
+  title: 'Next-Demo 标题',
+  greeting: '欢迎!',
+  'common.confirm.ok': '确认'
+};
+```
+
+因为下面的例子多语言文件是从服务端加载的，所以使用CommonJS形式导出。为了更好的维护多语言文件，可以引用`flat`库将其平铺。
+
+next-with-react-intl这个例子，主要是在服务端结合了国际化的部分。先来看server.js的部分代码：
+
+```js
+server.get('*', (req, res) => {
+    const accept = accepts(req);
+    const locale = (accept.language(accept.languages(supportedLanguages)) || 'zh-CN').split("-")[0];
+    req.locale = locale;
+    req.localeDataScript = getLocaleDataScript(locale);
+    req.messages = flat(getMessages(locale));
+    return handle(req, res);
+  });
+
+
+const localeDataCache = new Map();
+const getLocaleDataScript = locale => {
+  const lang = locale.split('-')[0];
+  if (!localeDataCache.has(lang)) {
+    const localeDataFile = require.resolve(`@formatjs/intl-relativetimeformat/dist/locale-data/${lang}`);
+    const localeDataScript = readFileSync(localeDataFile, 'utf8');
+    localeDataCache.set(lang, localeDataScript)
+  }
+  return localeDataCache.get(lang)
+};
+```
+
+理论上服务端跟react-intl没关系，而是跟`intl`国际化有关系。这里负责解析所有的请求，并通过`accepts`库，根据请求信息来决定应当使用的语种，然后通过`getLocaleDataScript`方法，将`formatjs`中对应语种的通用多语言内容提取出来，再将对应语言的多语言文件内容读取出来，统统塞到`req`中，这些信息就会被带到浏览器端。下面的工作交给_app.tsx和\_document.tsx。
+
+```tsx
+// _app.tsx
+export default class MyApp extends App<Props> {
+  static getInitialProps = async function ({Component, router, ctx}) {
+    let pageProps = {};
+
+    if (Component.getInitialProps) {
+      pageProps = await Component.getInitialProps(ctx);
+    }
+
+    const {req} = ctx;
+    const {locale, messages} = req || (window as any).__NEXT_DATA__.props;
+    return {pageProps, locale, messages};
+  };
+
+
+  render() {
+    const {Component, pageProps, locale, messages} = this.props;
+    return (
+      <ThemeProvider theme={theme}>
+        <IntlProvider locale={locale} messages={messages}>
+          <Component {...pageProps} />
+        </IntlProvider>
+      </ThemeProvider>
+    )
+  }
+}
+```
+
+扩展App组件，相当于全局处理，所以无论你访问哪个页面，都会先处理这里的逻辑。getInitialProps方法中，从上下文`ctx`中拿到req，从req中获得我们在后端插入的locale和messages属性，将这两个属性设置给`<IntlProvider/>`组件。使用多语言如下：
+
+```tsx
+// index.tsx
+export default class Index extends React.Component {
+  render() {
+    return (
+        <div>
+          <FormattedMessage id="greeting" defaultMessage="拉拉拉"/>
+        </div>
+    )
+  }
+}
+```
+
+使用`FormattedMessage`组件根据id属性来加载多语言内容，defaultMessage用于在找不到对应id的时候默认展示。
+
+#### 切换多语言
+
+
+
+### 使用Redux
+
+[官方范例](https://github.com/zeit/next.js/tree/canary/examples/with-redux)
+
