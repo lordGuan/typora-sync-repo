@@ -223,3 +223,51 @@ export default class Index extends React.Component {
 
 [官方范例](https://github.com/zeit/next.js/tree/canary/examples/with-redux)
 
+Redux的基础内容不在这里赘述，主要说明一下和Next.js服务端部分结合使用。组件和服务端沟通的桥梁是`getInitialProps`方法，所以在这里将状态树构造出来，挂到上下文中。为了实现这个过程，装饰一下`_app.tsx`：
+
+```tsx
+const isServer = typeof window === 'undefined';
+const __NEXT_REDUX_STORE__ = '__NEXT_REDUX_STORE__';
+
+function getOrCreateStore(initialState) {
+  // 服务端总是新建状态树
+  if (isServer) {
+    return initializeStore(initialState)
+  }
+
+  // 客户端的话就要考虑一下是不是已有全局状态树
+  if (!window[__NEXT_REDUX_STORE__]) {
+    // 状态树会被挂到window下的全局属性
+    window[__NEXT_REDUX_STORE__] = initializeStore(initialState)
+  }
+  return window[__NEXT_REDUX_STORE__]
+}
+
+export default App => {
+  return class AppWithRedux extends React.Component {
+    static async getInitialProps(appContext) {
+      const reduxStore = getOrCreateStore();
+
+      // 服务端初始化的store被挂到上下文中
+      appContext.ctx.reduxStore = reduxStore;
+
+      let appProps = {};
+      if (typeof App.getInitialProps === 'function') {
+        appProps = await App.getInitialProps(appContext)
+      }
+
+      return {
+        ...appProps,
+        initialReduxState: reduxStore.getState()
+      }
+    }
+
+    constructor(props) {
+      super(props);
+      // 客户端也去初始化，由于区分了端，这里保证拿到的状态树是统一的
+      this.reduxStore = getOrCreateStore(props.initialReduxState)
+    }
+  }
+}
+```
+
